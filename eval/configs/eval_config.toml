@@ -1,6 +1,5 @@
 device = "auto"          # "auto" | "cuda" | "mps" | "cpu"
 outdir = "results_erfnet"
-save_gt = true
 
 loadDir = "../trained_models/"
 loadWeights = "erfnet_pretrained.pth"

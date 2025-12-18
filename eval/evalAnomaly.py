@@ -1,6 +1,5 @@
 # Copyright (c) OpenMMLab. All rights reserved.
 import os
-import cv2
 import sys
 import csv
 import toml
@@ -9,11 +8,9 @@ import torch
 import random
 from PIL import Image
 import numpy as np
-from sympy.strategies.core import switch
 
 from erfnet import ERFNet
 import os.path as osp
-from argparse import ArgumentParser
 from ood_metrics import fpr_at_95_tpr, calc_metrics, plot_roc, plot_pr, plot_barcode
 from sklearn.metrics import roc_auc_score, roc_curve, auc, precision_recall_curve, average_precision_score
 from torchvision.transforms import Compose, Resize, ToTensor, Normalize
@@ -82,7 +79,6 @@ def main():
 
     out_root = cfg.get("outdir", "results_erfnet")
     os.makedirs(out_root, exist_ok=True)
-    save_gt = cfg.get("save_gt", True)
 
     baselines = cfg.get("baselines", ["MSP", "MaxLogit", "MaxEntropy"])
     datasets = cfg.get("datasets", [])
@@ -96,17 +92,10 @@ def main():
 
     file = open('results.txt', 'a')
 
-    # modelpath = args.loadDir + args.loadModel
-    # weightspath = args.loadDir + args.loadWeights
-    # baseline = str(args.baseline)
-
     # print("Loading model: " + modelpath)
     print("Loading weights: " + weightspath)
 
     model = ERFNet(NUM_CLASSES)
-
-    # if not args.cpu:
-    #     model = torch.nn.DataParallel(model).cuda()
 
     if device.type == 'cuda':
         model = torch.nn.DataParallel(model).to(device)
@@ -120,7 +109,6 @@ def main():
                 if name.startswith("module."):
                     own_state[name.split("module.")[-1]].copy_(param)
                 else:
-                    # print(name, " not loaded")
                     continue
             else:
                 own_state[name].copy_(param)
@@ -129,7 +117,6 @@ def main():
     model = load_my_state_dict(model, torch.load(weightspath, map_location=lambda storage, loc: storage))
     print("Model and weights LOADED successfully")
     model.eval()
-
 
     # ERFNet CSV table
     ds_names = [d.get('table_name', d['name']) for d in datasets]
@@ -149,7 +136,7 @@ def main():
             out_dir = osp.join(out_root, ds_name, baseline)
             os.makedirs(out_dir, exist_ok=True)
 
-            print(f"\n Dataset: {ds_name} | Baseline: {baseline} | Images: {len(img_paths)}")
+            print(f"Dataset: {ds_name:>20s} | Baseline: {baseline:>10s} | Images: {len(img_paths):>3d}", end=" => ")
             file.write(f"{ds_name} {baseline}\n")
 
             all_scores: list[np.ndarray] = []
@@ -185,10 +172,9 @@ def main():
                 ood_gts = np.array(mask)
 
                 if 'labels_masks' in pathGT:
-                    # Binary masks: any non-zero pixel indicates anomaly, but keep void=255 ignored.
                     ood_gts = np.where(ood_gts == 255, 255, (ood_gts > 0).astype(np.uint8))
                 else:
-                    # Dataset-specific remaps (semantic-style GT)
+                    # Dataset-specific remaps
                     if 'RoadAnomaly' in pathGT:
                         ood_gts = np.where((ood_gts == 2), 1, ood_gts)
                     if 'LostAndFound' in pathGT or 'LostFound' in pathGT:
@@ -200,6 +186,11 @@ def main():
                         ood_gts = np.where((ood_gts < 20), 0, ood_gts)
                         ood_gts = np.where((ood_gts == 255), 1, ood_gts)
 
+                # for FS Static, skip images with no anomaly pixels
+                if 'fs_static' in pathGT.lower():
+                    if 1 not in np.unique(ood_gts):
+                        continue
+
                 valid = (ood_gts != 255)
                 if np.any(valid):
                     all_scores.append(anomaly_result[valid].astype(np.float32).reshape(-1))
@@ -208,11 +199,6 @@ def main():
                 base_name = osp.splitext(osp.basename(path))[0]
                 save_path = osp.join(out_dir, f"{base_name}.npz")
                 score = anomaly_result.astype(np.float16)
-
-                if save_gt:
-                    np.savez_compressed(save_path, score=score, gt=ood_gts.astype(np.uint8))
-                else:
-                    np.savez_compressed(save_path, score=score)
 
             if all_scores and all_labels:
                 scores = np.concatenate(all_scores, axis=0)
@@ -225,7 +211,7 @@ def main():
             table_rows[baseline][f"{table_name}_AuPRC"] = auprc
             table_rows[baseline][f"{table_name}_FPR95"] = fpr95
 
-            print(f"AUPRC: {auprc:.4f}, FPR@TPR95: {fpr95:.4f}")
+            print(f"AUPRC: {auprc:.2f}, FPR@TPR95: {fpr95:.2f}")
 
     # Write ERFNet CSV table once, after all datasets/baselines
     headers = ["Model", "Method"]
