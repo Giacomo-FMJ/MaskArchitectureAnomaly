@@ -11,9 +11,9 @@ from torchvision import tv_tensors
 from pycocotools import mask as coco_mask
 import torch
 
-from datasets.lightning_data_module import LightningDataModule
-from datasets.transforms import Transforms
-from datasets.dataset import Dataset
+from .lightning_data_module import LightningDataModule
+from .transforms import Transforms
+from .dataset import Dataset
 
 CLASS_MAPPING = {
     1: 0,

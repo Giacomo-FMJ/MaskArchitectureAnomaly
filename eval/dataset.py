@@ -12,23 +12,30 @@ from torch.utils.data import Dataset
 
 EXTENSIONS = ['.jpg', '.png']
 
+
 def load_image(file):
     return Image.open(file)
+
 
 def is_image(filename):
     return any(filename.endswith(ext) for ext in EXTENSIONS)
 
+
 def is_label(filename):
     return filename.endswith("_labelTrainIds.png")
+
 
 def image_path(root, basename, extension):
     return os.path.join(root, f'{basename}{extension}')
 
+
 def image_path_city(root, name):
     return os.path.join(root, f'{name}')
 
+
 def image_basename(filename):
     return os.path.basename(os.path.splitext(filename)[0])
+
 
 class VOC12(Dataset):
 
@@ -37,7 +44,7 @@ class VOC12(Dataset):
         self.labels_root = os.path.join(root, 'labels')
 
         self.filenames = [image_basename(f)
-            for f in os.listdir(self.labels_root) if is_image(f)]
+                          for f in os.listdir(self.labels_root) if is_image(f)]
         self.filenames.sort()
 
         self.input_transform = input_transform
@@ -69,10 +76,12 @@ class cityscapes(Dataset):
         self.images_root = os.path.join(root, 'leftImg8bit/' + subset)
         self.labels_root = os.path.join(root, 'gtFine/' + subset)
         print(self.images_root, self.labels_root)
-        self.filenames = [os.path.join(dp, f) for dp, dn, fn in os.walk(os.path.expanduser(self.images_root)) for f in fn if is_image(f)]
+        self.filenames = [os.path.join(dp, f) for dp, dn, fn in os.walk(os.path.expanduser(self.images_root)) for f in
+                          fn if is_image(f)]
         self.filenames.sort()
 
-        self.filenamesGt = [os.path.join(dp, f) for dp, dn, fn in os.walk(os.path.expanduser(self.labels_root)) for f in fn if is_label(f)]
+        self.filenamesGt = [os.path.join(dp, f) for dp, dn, fn in os.walk(os.path.expanduser(self.labels_root)) for f in
+                            fn if is_label(f)]
         self.filenamesGt.sort()
 
         self.input_transform = input_transform
@@ -98,4 +107,3 @@ class cityscapes(Dataset):
 
     def __len__(self):
         return len(self.filenames)
-

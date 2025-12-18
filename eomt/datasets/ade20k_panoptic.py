@@ -11,9 +11,9 @@ from pathlib import Path
 from typing import Union
 from torch.utils.data import DataLoader
 
-from datasets.lightning_data_module import LightningDataModule
-from datasets.dataset import Dataset
-from datasets.transforms import Transforms
+from lightning_data_module import LightningDataModule
+from dataset import Dataset
+from transforms import Transforms
 
 CLASS_MAPPING = {i: i - 1 for i in range(1, 151)}
 INSTANCE_MAPPING = {

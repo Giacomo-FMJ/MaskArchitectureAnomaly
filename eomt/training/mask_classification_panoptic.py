@@ -8,8 +8,8 @@ from typing import List, Optional
 import torch.nn as nn
 import torch.nn.functional as F
 
-from training.mask_classification_loss import MaskClassificationLoss
-from training.lightning_module import LightningModule
+from .mask_classification_loss import MaskClassificationLoss
+from .lightning_module import LightningModule
 
 
 class MaskClassificationPanoptic(LightningModule):

@@ -17,28 +17,29 @@ from erfnet_nobn import ERFNet
 from transform import Relabel, ToLabel, Colorize
 
 import torch.backends.cudnn as cudnn
+
 cudnn.benchmark = True
+
 
 def main(args):
     model = ERFNet(19)
     if (not args.cpu):
-        model = model.cuda()#.half()	#HALF seems to be doing slower for some reason
+        model = model.cuda()  #.half()	#HALF seems to be doing slower for some reason
     #model = torch.nn.DataParallel(model).cuda()
 
     model.eval()
 
-
     images = torch.randn(args.batch_size, args.num_channels, args.height, args.width)
 
     if (not args.cpu):
-        images = images.cuda()#.half()
+        images = images.cuda()  #.half()
 
     time_train = []
 
-    i=0
+    i = 0
 
-    while(True):
-    #for step, (images, labels, filename, filenameGt) in enumerate(loader):
+    while (True):
+        #for step, (images, labels, filename, filenameGt) in enumerate(loader):
 
         start_time = time.time()
 
@@ -48,15 +49,18 @@ def main(args):
 
         #preds = outputs.cpu()
         if (not args.cpu):
-            torch.cuda.synchronize()    #wait for cuda to finish (cuda is asynchronous!)
+            torch.cuda.synchronize()  #wait for cuda to finish (cuda is asynchronous!)
 
-        if i!=0:    #first run always takes some time for setup
+        if i != 0:  #first run always takes some time for setup
             fwt = time.time() - start_time
             time_train.append(fwt)
-            print ("Forward time per img (b=%d): %.3f (Mean: %.3f)" % (args.batch_size, fwt/args.batch_size, sum(time_train) / len(time_train) / args.batch_size))
-        
-        time.sleep(1)   #to avoid overheating the GPU too much
-        i+=1
+            print("Forward time per img (b=%d): %.3f (Mean: %.3f)" % (args.batch_size, fwt / args.batch_size,
+                                                                      sum(time_train) / len(
+                                                                          time_train) / args.batch_size))
+
+        time.sleep(1)  #to avoid overheating the GPU too much
+        i += 1
+
 
 if __name__ == '__main__':
     parser = ArgumentParser()

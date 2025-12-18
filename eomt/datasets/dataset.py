@@ -170,6 +170,11 @@ class Dataset(torch.utils.data.Dataset):
                 self.targets_instance.append(target_instance_filename)
 
     def __getitem__(self, index: int):
+
+        # if isinstance(index, slice):
+        #     rng = range(*index.indices(len(self)))
+        #     return [self[i] for i in rng]
+
         img_zip, target_zip, target_instance_zip = self._load_zips()
 
         with img_zip.open(self.imgs[index]) as img:

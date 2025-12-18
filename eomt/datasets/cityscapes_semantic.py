@@ -9,9 +9,9 @@ from typing import Union
 from torch.utils.data import DataLoader
 from torchvision.datasets import Cityscapes
 
-from datasets.lightning_data_module import LightningDataModule
-from datasets.dataset import Dataset
-from datasets.transforms import Transforms
+from .lightning_data_module import LightningDataModule
+from .dataset import Dataset
+from .transforms import Transforms
 
 
 class CityscapesSemantic(LightningDataModule):
