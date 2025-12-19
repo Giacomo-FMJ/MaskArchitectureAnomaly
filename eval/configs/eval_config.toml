@@ -1,4 +1,4 @@
-device = "auto"          # "auto" | "cuda" | "mps" | "cpu"
+device = "auto"          # "auto", "cuda", "mps", "cpu"
 outdir = "results_erfnet"
 
 loadDir = "../trained_models/"

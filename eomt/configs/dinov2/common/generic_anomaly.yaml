@@ -1,0 +1,52 @@
+data:
+  class_path: datasets.generic_anomaly.GenericAnomalyDataset
+  init_args:
+    img_size: [1024, 1024]
+    batch_size: 1
+    num_workers: 4
+
+    datasets:
+      - name: RoadAnomaly
+        root: eomt_trained_model/Validation_Dataset/RoadAnomaly
+        images_dir: images
+        masks_dir: labels_masks
+        image_glob: "*.jpg"
+        mask_ext: "png"
+        gt_format: binary_any_nonzero_is_ood_void255
+        skip_no_ood: false
+
+      - name: RoadAnomaly21
+        root: eomt_trained_model/Validation_Dataset/RoadAnomaly21
+        images_dir: images
+        masks_dir: labels_masks
+        image_glob: "*.png"
+        mask_ext: "png"
+        gt_format: binary_any_nonzero_is_ood_void255
+        skip_no_ood: false
+
+      - name: RoadObstacle21
+        root: eomt_trained_model/Validation_Dataset/RoadObstacle21
+        images_dir: images
+        masks_dir: labels_masks
+        image_glob: "*.webp"
+        mask_ext: "png"
+        gt_format: binary_any_nonzero_is_ood_void255
+        skip_no_ood: false
+
+      - name: FS_LostFound_full
+        root: eomt_trained_model/Validation_Dataset/FS_LostFound_full
+        images_dir: images
+        masks_dir: labels_masks
+        image_glob: "*.png"
+        mask_ext: "png"
+        gt_format: binary_any_nonzero_is_ood_void255
+        skip_no_ood: false
+
+      - name: FS_Static
+        root: eomt_trained_model/Validation_Dataset/fs_static
+        images_dir: images
+        masks_dir: labels_masks
+        image_glob: "*.jpg"
+        mask_ext: "png"
+        gt_format: binary_255_is_ood
+        skip_no_ood: true

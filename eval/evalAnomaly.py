@@ -211,7 +211,7 @@ def main():
             table_rows[baseline][f"{table_name}_AuPRC"] = auprc
             table_rows[baseline][f"{table_name}_FPR95"] = fpr95
 
-            print(f"AUPRC: {auprc:.2f}, FPR@TPR95: {fpr95:.2f}")
+            print(f"AUPRC: {auprc:5.2f}, FPR@TPR95: {fpr95:5.2f}")
 
     # Write ERFNet CSV table once, after all datasets/baselines
     headers = ["Model", "Method"]
