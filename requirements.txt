@@ -15,3 +15,4 @@ pycocotools==2.0.8
 gdown
 toml
 scikit-learn
+requests

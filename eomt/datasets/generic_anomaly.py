@@ -36,6 +36,43 @@ def normalize_gt(gt: np.ndarray, gt_format: str) -> np.ndarray:
 
 
 class GenericAnomalyDataset(Dataset):
+    """
+    Class representing a generic anomaly dataset.
+
+    This class provides functionality to handle a dataset for anomaly detection,
+    including image and mask loading, transformations, and creating targets for
+    model input. The dataset expects an organized directory structure to locate
+    images and corresponding masks. It supports filtering images without any out-of-distribution
+    anomalies if configured. The primary goal is to prepare images and their associated
+    ground truth annotations for training or evaluating anomaly detection models.
+
+    :ivar cfg: Dictionary containing dataset configuration parameters.
+    :type cfg: dict
+    :ivar name: Name of the dataset, derived from the configuration.
+    :type name: str
+    :ivar root: Root directory where the dataset is stored.
+    :type root: str
+    :ivar images_dir: Subdirectory under the root containing images.
+    :type images_dir: str
+    :ivar masks_dir: Subdirectory under the root containing masks or labels.
+    :type masks_dir: str
+    :ivar image_glob: Glob pattern to match image files.
+    :type image_glob: str
+    :ivar mask_ext: File extension for the mask files.
+    :type mask_ext: str
+    :ivar gt_format: Ground truth format used in the dataset (used for normalization).
+    :type gt_format: Any
+    :ivar skip_no_ood: Boolean flag indicating whether to skip images without out-of-distribution anomalies.
+    :type skip_no_ood: bool
+    :ivar img_size: Tuple specifying the image size for resizing operations.
+    :type img_size: tuple
+    :ivar img_transform: Transformation pipeline for input images, including resizing and tensor conversion.
+    :type img_transform: torchvision.transforms.Compose
+    :ivar mask_resize: Transformation pipeline for resizing masks.
+    :type mask_resize: torchvision.transforms.Resize
+    :ivar img_paths: List of file paths for valid images in the dataset.
+    :type img_paths: list
+    """
     def __init__(self, ds_cfg: dict, img_size=(1024, 1024)):
 
         self.cfg = ds_cfg
@@ -83,16 +120,13 @@ class GenericAnomalyDataset(Dataset):
         mask_path = self._img_to_mask_path(img_path)
 
         img = Image.open(img_path).convert("RGB")
-        img_t = self.img_transform(img)  # [3,H,W] uint8 (pilTensor)
+        img_t = self.img_transform(img)  # [3,H,W] uint8 (PilTensor)
 
         mask = Image.open(mask_path)
         mask = self.mask_resize(mask)
         gt = normalize_gt(np.array(mask, dtype=np.uint8), self.gt_format)  # {0,1,255}
         gt_t = torch.from_numpy(gt.astype(np.int64))  # [H,W] long
 
-        # return img_t, gt_t
-
-        # Build Lightning-style semantic target expected by `model.to_per_pixel_targets_semantic`.
         # Two classes: 0 = ID/normal, 1 = OOD/anomaly. Pixels with 255 are ignored by not belonging to any mask
         m0 = (gt_t == 0)
         m1 = (gt_t == 1)
