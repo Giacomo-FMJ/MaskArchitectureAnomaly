@@ -1,5 +1,5 @@
 data:
-  class_path: datasets.generic_anomaly.GenericAnomalyDataset
+  class_path: dsets.generic_anomaly.GenericAnomalyDataset
   init_args:
     img_size: [1024, 1024]
     batch_size: 1

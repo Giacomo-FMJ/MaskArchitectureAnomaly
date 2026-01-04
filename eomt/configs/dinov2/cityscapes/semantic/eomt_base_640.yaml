@@ -22,4 +22,4 @@ model:
           init_args:
             backbone_name: vit_base_patch14_reg4_dinov2
 data:
-  class_path: datasets.cityscapes_semantic.CityscapesSemantic
+  class_path: dsets.cityscapes_semantic.CityscapesSemantic

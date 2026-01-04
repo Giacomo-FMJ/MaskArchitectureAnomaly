@@ -19,7 +19,7 @@ from lightning.pytorch.loops.training_epoch_loop import _TrainingEpochLoop
 from lightning.pytorch.loops.fetchers import _DataFetcher, _DataLoaderIterDataFetcher
 
 from training.lightning_module import LightningModule
-from datasets.lightning_data_module import LightningDataModule
+from dsets.lightning_data_module import LightningDataModule
 
 # Suppress PyTorch FX warnings for DINOv3 models
 import os
