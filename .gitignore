@@ -4,7 +4,6 @@ eval/validation_datasets
 eomt/raw_datasets
 eomt/eomt_trained_model
 eomt/checksum*
-results
 
 .idea
 
