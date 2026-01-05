@@ -154,6 +154,7 @@ class LightningCLI(cli.LightningCLI):
         if not self.config[self.config["subcommand"]]["compile_disabled"]:
             model = torch.compile(model)
 
+
         self.trainer.fit(model, **kwargs)
 
 
