@@ -34,7 +34,6 @@ class MCS_Anomaly(MaskClassificationSemantic):
         kwargs.setdefault('mask_coefficient', 2.0)
         kwargs.setdefault('dice_coefficient', 2.0)
         kwargs.setdefault('class_coefficient', 2.0)
-        kwargs.setdefault('no_object_weight', 0.1)
 
         super().__init__(
             network=network,
