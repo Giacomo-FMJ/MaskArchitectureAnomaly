@@ -7,7 +7,7 @@ trainer:
       project: "eomt"
       name: "cityscapes_semantic_eomt_base_640"
 model:
-  class_path: training.mask_classification_semantic.MaskClassificationSemantic
+  class_path: training.mask_classification_semantic_anomaly.MCS_Anomaly
   init_args:
     attn_mask_annealing_enabled: True
     attn_mask_annealing_start_steps: [3317, 8292, 13268]
@@ -22,4 +22,4 @@ model:
           init_args:
             backbone_name: vit_base_patch14_reg4_dinov2
 data:
-  class_path: dsets.cityscapes_semantic.CityscapesSemantic
+  class_path: dsets.generic_anomaly.GenericAnomalyDataset
