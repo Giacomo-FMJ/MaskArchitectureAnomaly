@@ -36,7 +36,7 @@ class EoMT_EXT(nn.Module):
 
         self.class_head = nn.Linear(self.encoder.backbone.embed_dim, num_classes + 1)
 
-        self.anomaly_head = nn.Linear(self.encoder.backbone.embed_dim, 1)
+        self.anomaly_head = nn.Linear(self.encoder.backbone.embed_dim, 3)
 
         self.mask_head = nn.Sequential(
             nn.Linear(self.encoder.backbone.embed_dim, self.encoder.backbone.embed_dim),
@@ -163,7 +163,7 @@ class EoMT_EXT(nn.Module):
             x = self.encoder.backbone._pos_embed(x)
 
         attn_mask = None
-        mask_logits_per_layer, class_logits_per_layer, anomaly_score_per_layer = [], [], []
+        mask_logits_per_layer, class_logits_per_layer, anomaly_logits_per_layer = [], [], []
 
         for i, block in enumerate(self.encoder.backbone.blocks):
             if i == len(self.encoder.backbone.blocks) - self.num_blocks:
@@ -175,10 +175,10 @@ class EoMT_EXT(nn.Module):
                 self.masked_attn_enabled
                 and i >= len(self.encoder.backbone.blocks) - self.num_blocks
             ):
-                mask_logits, class_logits, anomaly_score = self._predict(self.encoder.backbone.norm(x))
+                mask_logits, class_logits, anomaly_logits = self._predict(self.encoder.backbone.norm(x))
                 mask_logits_per_layer.append(mask_logits)
                 class_logits_per_layer.append(class_logits)
-                anomaly_score_per_layer.append(anomaly_score)
+                anomaly_logits_per_layer.append(anomaly_logits)
 
                 attn_mask = self._attn_mask(x, mask_logits, i)
 
@@ -198,13 +198,13 @@ class EoMT_EXT(nn.Module):
             elif hasattr(block, "layer_scale2"):
                 x = x + block.layer_scale2(mlp_out)
 
-        mask_logits, class_logits, anomaly_score = self._predict(self.encoder.backbone.norm(x))
+        mask_logits, class_logits, anomaly_logits = self._predict(self.encoder.backbone.norm(x))
         mask_logits_per_layer.append(mask_logits)
         class_logits_per_layer.append(class_logits)
-        anomaly_score_per_layer.append(anomaly_score)
+        anomaly_logits_per_layer.append(anomaly_logits)
 
         return (
             mask_logits_per_layer,
             class_logits_per_layer,
-            anomaly_score_per_layer
+            anomaly_logits_per_layer
         )

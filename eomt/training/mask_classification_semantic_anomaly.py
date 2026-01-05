@@ -26,6 +26,9 @@ class MCS_Anomaly(MaskClassificationSemantic):
         kwargs.setdefault('dice_coefficient', 2.0)
         kwargs.setdefault('class_coefficient', 2.0)
         kwargs['no_object_coefficient'] = no_object_weight_val
+        # Configurazione classi: 0=Sfondo, 1=Anomalia
+        self.num_classes = 2
+        self.stuff_classes = range(2)
 
         super().__init__(
             network=network,
@@ -36,10 +39,6 @@ class MCS_Anomaly(MaskClassificationSemantic):
             attn_mask_annealing_end_steps=attn_mask_annealing_end_steps,
             **kwargs
         )
-
-        # Configurazione classi: 0=Sfondo, 1=Anomalia
-        self.num_classes = 2
-        self.stuff_classes = range(2)
 
         num_layers = self.network.num_blocks + 1 if getattr(self.network, 'masked_attn_enabled', False) else 1
         self.init_metrics_semantic(self.ignore_idx, num_layers)
@@ -67,24 +66,15 @@ class MCS_Anomaly(MaskClassificationSemantic):
         imgs, targets = batch
         targets = self._unstack_targets(imgs, targets)
 
-        mask_logits_per_block, class_logits_per_block, anomaly_score_per_block = self(imgs)
+        mask_logits_per_block, class_logits_per_block, anomaly_logits_per_block = self(imgs)
 
         losses_all_blocks = {}
-        for i, (mask_logits, class_logits, anomaly_scores) in enumerate(
-                list(zip(mask_logits_per_block, class_logits_per_block, anomaly_score_per_block))
+        for i, (mask_logits, class_logits, anomaly_logits) in enumerate(
+                list(zip(mask_logits_per_block, class_logits_per_block, anomaly_logits_per_block))
         ):
-            # --- TRAINING ---
-            # Qui SERVE la classe Void (0) per la Hungarian Loss.
-            # Sfondo = -score, Anomalia = score, Void = 0.
-            dummy_void_logits = torch.zeros_like(anomaly_scores)
-
-            class_queries_logits = torch.cat(
-                [-anomaly_scores, anomaly_scores, dummy_void_logits], dim=-1
-            )
-
             losses = self.criterion(
                 masks_queries_logits=mask_logits,
-                class_queries_logits=class_queries_logits,
+                class_queries_logits=anomaly_logits,
                 targets=targets,
             )
             block_postfix = self.block_postfix(i)
@@ -100,24 +90,26 @@ class MCS_Anomaly(MaskClassificationSemantic):
 
         crops, origins = self.window_imgs_semantic(imgs)
 
-        mask_logits_per_layer, class_logits_per_layer, anomaly_scores_per_layer = self(crops)
+        mask_logits_per_layer, class_logits_per_layer, anomaly_logits_per_layer = self(crops)
 
         targets = self.to_per_pixel_targets_semantic(targets, self.ignore_idx)
 
-        for i, (mask_logits, class_logits, anomaly_scores) in enumerate(
-                list(zip(mask_logits_per_layer, class_logits_per_layer, anomaly_scores_per_layer))
+        for i, (mask_logits, class_logits, anomaly_logits) in enumerate(
+                list(zip(mask_logits_per_layer, class_logits_per_layer, anomaly_logits_per_layer))
         ):
-            # --- FIX VISUALIZZAZIONE / EVAL ---
-            # Ignoriamo completamente la funzione to_per_pixel_logits_semantic del genitore
-            # che cerca di tagliare l'ultima classe. Facciamo il calcolo manualmente su 2 classi.
+            # # --- FIX VISUALIZZAZIONE / EVAL ---
+            # # Ignoriamo completamente la funzione to_per_pixel_logits_semantic del genitore
+            # # che cerca di tagliare l'ultima classe. Facciamo il calcolo manualmente su 2 classi.
+            #
+            # # Creiamo logits binari: [Sfondo (-score), Anomalia (score)]
+            # # Se score < 0 -> vince Sfondo
+            # # Se score > 0 -> vince Anomalia
+            # class_queries_logits = torch.cat(
+            #     [-anomaly_logits, anomaly_logits], dim=-1
+            # )  # [B, Q, 2]
 
-            # Creiamo logits binari: [Sfondo (-score), Anomalia (score)]
-            # Se score < 0 -> vince Sfondo
-            # Se score > 0 -> vince Anomalia
-            class_queries_logits = torch.cat(
-                [-anomaly_scores, anomaly_scores], dim=-1
-            )  # [B, Q, 2]
-
+            probs_anomaly = anomaly_logits.softmax(dim=-1)
+            valid_probs = probs_anomaly[..., :2]
             mask_logits = F.interpolate(mask_logits, self.img_size, mode="bilinear")  # [B, Q, H, W]
 
             # Calcolo manuale: Einsum (somma pesata delle maschere per probabilità classe)
@@ -125,7 +117,7 @@ class MCS_Anomaly(MaskClassificationSemantic):
             crop_logits = torch.einsum(
                 "bqhw, bqc -> bchw",
                 mask_logits.sigmoid(),
-                class_queries_logits.softmax(dim=-1)
+                valid_probs
             )
 
             logits = self.revert_window_logits_semantic(crop_logits, origins, img_sizes)
