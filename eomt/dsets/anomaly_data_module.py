@@ -3,14 +3,14 @@
 # ---------------------------------------------------------------
 from typing import Optional
 
-import lightning
+import lightning.pytorch as pl
 from torch.utils.data import DataLoader
 import torch
 
 from .generic_anomaly import GenericAnomalyDataset
 
 
-class AnomalyDataModule(lightning.LightningDataModule):
+class AnomalyDataModule(pl.LightningDataModule):
     def __init__(
         self,
         ds_cfg: dict,
