@@ -1,36 +1,41 @@
 # ---------------------------------------------------------------
 # Minimal Lightning DataModule wrapping GenericAnomalyDataset
 # ---------------------------------------------------------------
-from typing import Optional
+from typing import Optional, Sequence
 
-import lightning.pytorch as pl
 from torch.utils.data import DataLoader
 import torch
 
+from .lightning_data_module import LightningDataModule
 from .generic_anomaly import GenericAnomalyDataset
 
-
-class AnomalyDataModule(pl.LightningDataModule):
+class AnomalyDataModule(LightningDataModule):
     def __init__(
         self,
         ds_cfg: dict,
         batch_size: int = 4,
         num_workers: int = 4,
         img_size: tuple[int, int] = (640, 640),
+        num_classes: int = 2,
+        stuff_classes: Optional[Sequence[int]] = None,
         pin_memory: bool = True,
         persistent_workers: bool = True,
     ) -> None:
-        super().__init__()
+        super().__init__(
+            path=ds_cfg.get("root", ""),
+            batch_size=batch_size,
+            num_workers=num_workers,
+            img_size=tuple(img_size),
+            num_classes=num_classes,
+            check_empty_targets=False,
+            ignore_idx=ds_cfg.get("ignore_idx", 255),
+            pin_memory=pin_memory,
+            persistent_workers=persistent_workers,
+        )
+
         self.ds_cfg = ds_cfg
-        self.batch_size = batch_size
-        self.num_workers = num_workers
-        self.img_size = tuple(img_size)
-        self.dataloader_kwargs = {
-            "batch_size": batch_size,
-            "num_workers": num_workers,
-            "pin_memory": pin_memory,
-            "persistent_workers": False if num_workers == 0 else persistent_workers,
-        }
+        self.num_classes = num_classes
+        self.stuff_classes = list(stuff_classes) if stuff_classes is not None else list(range(num_classes))
         self.dataset = None
 
     def setup(self, stage: Optional[str] = None) -> None:

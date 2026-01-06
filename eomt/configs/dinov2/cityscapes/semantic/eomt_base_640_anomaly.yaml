@@ -36,7 +36,7 @@ model:
     network:
       class_path: models.eomt_ext.EoMT_EXT
       init_args:
-        num_classes: 19
+        num_classes: 2
         num_q: 100
         num_blocks: 3
         masked_attn_enabled: true
@@ -53,9 +53,12 @@ data:
   init_args:
     batch_size: 4
     num_workers: 4
+    num_classes: 2
+    stuff_classes: [0, 1]
     img_size: [640, 640]
     ds_cfg:
       name: "RoadAnomaly21"
+      # Override via CLI: --data.ds_cfg.root /content/drive/MyDrive/datasets/RoadAnomaly21
       root: "/ABSOLUTE/PATH/TO/RoadAnomaly21"
       images_dir: "images"
       masks_dir: "labels_masks"

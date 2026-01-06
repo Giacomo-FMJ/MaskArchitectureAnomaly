@@ -13,6 +13,7 @@ class MCS_Anomaly(MaskClassificationSemantic):
         img_size: tuple[int, int], 
         num_classes: int,
         attn_mask_annealing_enabled: bool,
+        stuff_classes: Optional[List[int]] = None,
         attn_mask_annealing_start_steps: Optional[List[int]] = None,
         attn_mask_annealing_end_steps: Optional[List[int]] = None,
         ignore_idx: int = 255,
@@ -37,6 +38,7 @@ class MCS_Anomaly(MaskClassificationSemantic):
             network=network,
             img_size=img_size,
             num_classes=num_classes,
+            stuff_classes=stuff_classes,
             attn_mask_annealing_enabled=attn_mask_annealing_enabled,
             attn_mask_annealing_start_steps=attn_mask_annealing_start_steps,
             attn_mask_annealing_end_steps=attn_mask_annealing_end_steps,
@@ -70,12 +72,17 @@ class MCS_Anomaly(MaskClassificationSemantic):
             # Filter only the network weights (exclude anomaly_head which does not exist in the pretrained model)
             network_state_dict = {}
             for k, v in state_dict.items():
-                if k.startswith('network.'):
-                    # Remove the 'network.' prefix
-                    new_key = k.replace('network.', '', 1)
-                    # Exclude anomaly_head if present (should not be in the checkpoint)
-                    if 'anomaly_head' not in new_key:
-                        network_state_dict[new_key] = v
+                if not k.startswith('network.'):
+                    continue
+
+                new_key = k.replace('network.', '', 1)
+
+                if 'anomaly_head' in new_key:
+                    continue
+                if (not load_ckpt_class_head) and ('class_head' in new_key):
+                    continue
+
+                network_state_dict[new_key] = v
             
             # Load weights with strict=False to allow missing keys (anomaly_head)
             missing_keys, unexpected_keys = self.network.load_state_dict(network_state_dict, strict=False)
@@ -85,7 +92,14 @@ class MCS_Anomaly(MaskClassificationSemantic):
                 anomaly_keys = [k for k in missing_keys if 'anomaly_head' in k]
                 if anomaly_keys:
                     print(f"✓ Anomaly head keys not in checkpoint (expected): {anomaly_keys}")
-                other_keys = [k for k in missing_keys if 'anomaly_head' not in k]
+
+                class_head_keys = []
+                if not load_ckpt_class_head:
+                    class_head_keys = [k for k in missing_keys if 'class_head' in k]
+                    if class_head_keys:
+                        print(f"✓ Class head keys intentionally skipped: {class_head_keys}")
+
+                other_keys = [k for k in missing_keys if ('anomaly_head' not in k and (load_ckpt_class_head or 'class_head' not in k))]
                 if other_keys:
                     print(f"⚠ Other missing keys: {other_keys}")
             if unexpected_keys:

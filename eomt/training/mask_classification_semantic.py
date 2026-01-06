@@ -18,6 +18,7 @@ class MaskClassificationSemantic(LightningModule):
         network: nn.Module,
         img_size: tuple[int, int],
         num_classes: int,
+        stuff_classes: Optional[List[int]] = None,
         attn_mask_annealing_enabled: bool,
         attn_mask_annealing_start_steps: Optional[list[int]] = None,
         attn_mask_annealing_end_steps: Optional[list[int]] = None,
@@ -66,7 +67,7 @@ class MaskClassificationSemantic(LightningModule):
         self.ignore_idx = ignore_idx
         self.mask_thresh = mask_thresh
         self.overlap_thresh = overlap_thresh
-        self.stuff_classes = range(num_classes)
+        self.stuff_classes = list(stuff_classes) if stuff_classes is not None else list(range(num_classes))
 
         self.criterion = MaskClassificationLoss(
             num_points=num_points,
