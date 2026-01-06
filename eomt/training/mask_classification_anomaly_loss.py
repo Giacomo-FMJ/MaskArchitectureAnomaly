@@ -49,7 +49,7 @@ class MaskClassificationAnomalyLoss(nn.Module):
             num_points=num_points,
             cost_mask=mask_coefficient,
             cost_dice=dice_coefficient,
-            cost_class=1.0,  # Not used for anomaly but required by matcher
+            cost_class=0.0,  # No class matching, only mask-based matching
         )
 
     @torch.compiler.disable
@@ -76,11 +76,20 @@ class MaskClassificationAnomalyLoss(nn.Module):
         ]
         class_labels = [target["labels"].long() for target in targets]
 
-        # Use Hungarian matching to assign queries to ground truth
+        # Dummy class logits for matcher (cost_class=0 so they're ignored)
+        # Just need the right shape [B, Q, num_classes]
+        batch_size, num_queries = masks_queries_logits.shape[:2]
+        dummy_class_logits = torch.zeros(
+            batch_size, num_queries, 2, 
+            device=masks_queries_logits.device,
+            dtype=masks_queries_logits.dtype
+        )
+
+        # Use Hungarian matching ONLY on masks (cost_class=0)
         indices = self.matcher(
             masks_queries_logits=masks_queries_logits,
             mask_labels=mask_labels,
-            class_queries_logits=None,  # Not used for anomaly
+            class_queries_logits=dummy_class_logits,  # Ignored due to cost_class=0
             class_labels=class_labels,
         )
 
