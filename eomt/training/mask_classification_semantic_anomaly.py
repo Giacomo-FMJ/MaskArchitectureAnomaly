@@ -109,7 +109,9 @@ class MCS_Anomaly(MaskClassificationSemantic):
             # )  # [B, Q, 2]
 
             probs_anomaly = anomaly_logits.softmax(dim=-1)
-            valid_probs = probs_anomaly[..., 0] + probs_anomaly[..., 2]
+            prob_bg_merged = probs_anomaly[..., 0] + probs_anomaly[..., 2]
+            prob_anomaly = probs_anomaly[..., 1]
+            valid_probs = torch.stack([prob_bg_merged, prob_anomaly], dim=-1)
             mask_logits = F.interpolate(mask_logits, self.img_size, mode="bilinear")  # [B, Q, H, W]
 
             # Calcolo manuale: Einsum (somma pesata delle maschere per probabilità classe)

@@ -28,11 +28,11 @@ data:
   init_args:
     img_size: [ 1024, 1024 ]
     datasets:
-      - name: FS_Static
-        root: eomt_trained_model/Validation_Dataset/fs_static
+      - name: RoadAnomaly
+        root: eomt_trained_model/Validation_Dataset/RoadAnomaly
         images_dir: images
         masks_dir: labels_masks
         image_glob: "*.jpg"
         mask_ext: "png"
-        gt_format: binary_255_is_ood
+        gt_format: binary_any_nonzero_is_ood_void255
         skip_no_ood: false
