@@ -175,3 +175,45 @@ class MCS_Anomaly(MaskClassificationSemantic):
 
         return self.anomaly_criterion.loss_total(losses_all_blocks, self.log)
 
+    def eval_step(
+        self,
+        batch,
+        batch_idx=None,
+        log_prefix=None,
+    ):
+        """Override eval_step to handle anomaly detection (binary: normal vs anomaly)"""
+        imgs, targets = batch
+
+        img_sizes = [img.shape[-2:] for img in imgs]
+        crops, origins = self.window_imgs_semantic(imgs)
+        mask_logits_per_layer, class_logits_per_layer, anomaly_score_per_layer = self(crops)
+
+        targets = self.to_per_pixel_targets_semantic(targets, self.ignore_idx)
+
+        for i, (mask_logits, class_logits, anomaly_scores) in enumerate(
+            list(zip(mask_logits_per_layer, class_logits_per_layer, anomaly_score_per_layer))
+        ):
+            # Interpolate masks to image size
+            mask_logits = nn.functional.interpolate(mask_logits, self.img_size, mode="bilinear")
+            
+            # Use anomaly scores instead of class logits for binary prediction
+            # anomaly_scores: [B, Q, 1] -> sigmoid -> [B, Q]
+            anomaly_probs = torch.sigmoid(anomaly_scores.squeeze(-1))  # [B, Q]
+            
+            # Create binary logits: [B, Q, 2] where [:,:,0]=normal, [:,:,1]=anomaly
+            binary_class_logits = torch.stack([
+                -anomaly_scores.squeeze(-1),  # logit for class 0 (normal)
+                anomaly_scores.squeeze(-1)     # logit for class 1 (anomaly)
+            ], dim=-1)  # [B, Q, 2]
+            
+            # Use semantic method but with binary class logits
+            crop_logits = self.to_per_pixel_logits_semantic(mask_logits, binary_class_logits)
+            logits = self.revert_window_logits_semantic(crop_logits, origins, img_sizes)
+
+            self.update_metrics_semantic(logits, targets, i)
+
+            if batch_idx == 0:
+                self.plot_semantic(
+                    imgs[0], targets[0], logits[0], log_prefix, i, batch_idx
+                )
+
