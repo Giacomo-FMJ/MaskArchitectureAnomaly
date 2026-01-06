@@ -71,6 +71,8 @@ class MCS_Anomaly(MaskClassificationSemantic):
             
             # Filter only the network weights (exclude anomaly_head which does not exist in the pretrained model)
             network_state_dict = {}
+            skipped_pos_embed = False
+            
             for k, v in state_dict.items():
                 if not k.startswith('network.'):
                     continue
@@ -81,6 +83,16 @@ class MCS_Anomaly(MaskClassificationSemantic):
                     continue
                 if (not load_ckpt_class_head) and ('class_head' in new_key):
                     continue
+                
+                # Skip positional embeddings if shape mismatch (different image size)
+                if 'pos_embed' in new_key or 'rope' in new_key:
+                    # Check if shapes match
+                    if new_key in self.network.state_dict():
+                        current_shape = self.network.state_dict()[new_key].shape
+                        if current_shape != v.shape:
+                            print(f"⚠ Skipping {new_key}: shape mismatch (ckpt: {v.shape}, model: {current_shape})")
+                            skipped_pos_embed = True
+                            continue
 
                 network_state_dict[new_key] = v
             
@@ -88,6 +100,8 @@ class MCS_Anomaly(MaskClassificationSemantic):
             missing_keys, unexpected_keys = self.network.load_state_dict(network_state_dict, strict=False)
             
             print(f"✓ Successfully loaded pretrained weights")
+            if skipped_pos_embed:
+                print(f"✓ Positional embeddings re-initialized for current image size (640x640)")
             if missing_keys:
                 anomaly_keys = [k for k in missing_keys if 'anomaly_head' in k]
                 if anomaly_keys:
