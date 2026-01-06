@@ -90,7 +90,6 @@ class MCS_Anomaly(MaskClassificationSemantic):
 
         crops, origins = self.window_imgs_semantic(imgs)
 
-        # Unpacking dei 3 output [Mask, Class, Anomaly(Bg, Ano, Void)]
         mask_logits_per_layer, class_logits_per_layer, anomaly_logits_per_layer = self(crops)
 
         targets = self.to_per_pixel_targets_semantic(targets, self.ignore_idx)
@@ -98,41 +97,30 @@ class MCS_Anomaly(MaskClassificationSemantic):
         for i, (mask_logits, class_logits, anomaly_logits) in enumerate(
                 list(zip(mask_logits_per_layer, class_logits_per_layer, anomaly_logits_per_layer))
         ):
+            # # --- FIX VISUALIZZAZIONE / EVAL ---
+            # # Ignoriamo completamente la funzione to_per_pixel_logits_semantic del genitore
+            # # che cerca di tagliare l'ultima classe. Facciamo il calcolo manualmente su 2 classi.
+            #
+            # # Creiamo logits binari: [Sfondo (-score), Anomalia (score)]
+            # # Se score < 0 -> vince Sfondo
+            # # Se score > 0 -> vince Anomalia
+            # class_queries_logits = torch.cat(
+            #     [-anomaly_logits, anomaly_logits], dim=-1
+            # )  # [B, Q, 2]
+
+            probs_anomaly = anomaly_logits.softmax(dim=-1)
+            valid_probs = probs_anomaly[..., :2]
             mask_logits = F.interpolate(mask_logits, self.img_size, mode="bilinear")  # [B, Q, H, W]
 
-            # 1. Softmax su tutti e 3 i canali (Bg, Ano, Void)
-            # anomaly_logits ha shape [B, Q, 3]
-            probs = anomaly_logits.softmax(dim=-1)
-
-            # 2. Logica di soppressione Void
-            # Se è Void (idx 2), contribuisce alla certezza di Background (idx 0).
-            # Void = "Nessun Oggetto" = Sicuramente non Anomalia = Background
-            valid_probs = probs.clone()
-            valid_probs[..., 0] = valid_probs[..., 0] + valid_probs[..., 2]
-
-            # 3. Tronchiamo a 2 classi [Background, Anomaly]
-            valid_probs = valid_probs[..., :2]
-
-            # 4. Calcolo Probability Map per pixel (Soft Segmentation)
-            # range [0, 1]
-            crop_probs = torch.einsum(
+            # Calcolo manuale: Einsum (somma pesata delle maschere per probabilità classe)
+            # Softmax su 2 classi assicura che P(Sfondo) + P(Anomalia) = 1.0. Non c'è Void.
+            crop_logits = torch.einsum(
                 "bqhw, bqc -> bchw",
                 mask_logits.sigmoid(),
                 valid_probs
             )
 
-            # 5. Ricostruzione (Stitching) nello spazio delle probabilità
-            # Più stabile mediare probabilità tra 0 e 1 che logit grezzi
-            final_probs = self.revert_window_logits_semantic(crop_probs, origins, img_sizes)
-
-            # 6. Pulizia NaN post-stitching
-            if torch.isnan(final_probs).any():
-                final_probs = torch.nan_to_num(final_probs, nan=0.0)
-
-            # 7. Conversione finale in Pseudo-Logits
-            # Le metriche si aspettano logits per fare la loro softmax/argmax interna o cross-entropy
-            # Usiamo clamp(min=1e-8) per evitare il -inf del log(0)
-            logits = torch.log(final_probs.clamp(min=1e-8))
+            logits = self.revert_window_logits_semantic(crop_logits, origins, img_sizes)
 
             self.update_metrics_semantic(logits, targets, i)
 
