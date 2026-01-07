@@ -39,7 +39,8 @@ class MaskClassificationAnomalyLoss(Mask2FormerLoss):
         mask_coefficient: float,
         dice_coefficient: float,
         anomaly_coefficient: float,
-        anomaly_weight: float = 10.0,  # Weight for anomaly class (higher = more importance)
+        anomaly_weight: float = 2.0,  # Weight for anomaly class (higher = more importance)
+        background_weight: float = 0.1,  # Weight for background class (lower to prevent dominance)
     ):
         # Initialize as nn.Module (not calling super().__init__() to avoid Mask2FormerLoss init)
         nn.Module.__init__(self)
@@ -50,6 +51,7 @@ class MaskClassificationAnomalyLoss(Mask2FormerLoss):
         self.dice_coefficient = dice_coefficient
         self.anomaly_coefficient = anomaly_coefficient
         self.anomaly_weight = anomaly_weight
+        self.background_weight = background_weight
 
         # Use Hungarian matcher with class cost for better anomaly matching
         self.matcher = Mask2FormerHungarianMatcher(

@@ -128,7 +128,8 @@ class MCS_Anomaly(MaskClassificationSemantic):
             mask_coefficient=mask_coefficient,
             dice_coefficient=dice_coefficient,
             anomaly_coefficient=anomaly_coefficient,
-            anomaly_weight=10.0,  # Higher weight for anomaly class to handle class imbalance
+            anomaly_weight=2.0,  # Weight for anomaly queries
+            background_weight=0.1,  # Low weight for background to prevent dominance
         )
 
         # Freeze backbone and class_head, unfreeze mask_head and anomaly_head
