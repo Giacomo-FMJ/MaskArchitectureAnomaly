@@ -15,7 +15,9 @@ import torch.nn as nn
 import torch.nn.functional as F
 from transformers.models.mask2former.modeling_mask2former import (
     Mask2FormerHungarianMatcher,
+    Mask2FormerLoss,
 )
+from scipy.optimize import linear_sum_assignment
 
 
 class MaskClassificationAnomalyLoss(nn.Module):
@@ -24,7 +26,10 @@ class MaskClassificationAnomalyLoss(nn.Module):
     Handles 3 classes: void (255, ignored), background (0), anomaly (1).
     
     Uses Hungarian matching to assign queries to ground truth masks,
-    then computes binary cross-entropy on anomaly scores.
+    then computes:
+    1. Binary cross-entropy on anomaly scores (with class weighting)
+    2. Mask loss (binary cross-entropy on mask logits)
+    3. Dice loss (for mask quality)
     """
     
     def __init__(
@@ -35,6 +40,7 @@ class MaskClassificationAnomalyLoss(nn.Module):
         mask_coefficient: float,
         dice_coefficient: float,
         anomaly_coefficient: float,
+        anomaly_weight: float = 10.0,  # Weight for anomaly class (higher = more importance)
     ):
         super().__init__()
         self.num_points = num_points
@@ -43,13 +49,20 @@ class MaskClassificationAnomalyLoss(nn.Module):
         self.mask_coefficient = mask_coefficient
         self.dice_coefficient = dice_coefficient
         self.anomaly_coefficient = anomaly_coefficient
+        self.anomaly_weight = anomaly_weight
 
-        # Use Hungarian matcher for query-to-GT assignment
+        # Use Hungarian matcher with class cost for better anomaly matching
         self.matcher = Mask2FormerHungarianMatcher(
             num_points=num_points,
             cost_mask=mask_coefficient,
             cost_dice=dice_coefficient,
-            cost_class=0.0,  # No class matching, only mask-based matching
+            cost_class=anomaly_coefficient,  # Use class cost for anomaly matching
+        )
+        
+        # Helper for mask/dice loss computation (reuse from Mask2Former)
+        self._mask2former_loss = Mask2FormerLoss(
+            num_labels=1,  # Binary: anomaly or not
+            eos_coef=0.1,
         )
 
     @torch.compiler.disable
@@ -76,29 +89,66 @@ class MaskClassificationAnomalyLoss(nn.Module):
         ]
         class_labels = [target["labels"].long() for target in targets]
 
-        # Dummy class logits for matcher (cost_class=0 so they're ignored)
-        # Just need the right shape [B, Q, num_classes]
+        # Convert anomaly logits to class logits [B, Q, 2] for matcher
+        # class 0 = background, class 1 = anomaly
         batch_size, num_queries = masks_queries_logits.shape[:2]
-        dummy_class_logits = torch.zeros(
+        class_logits = torch.zeros(
             batch_size, num_queries, 2, 
             device=masks_queries_logits.device,
             dtype=masks_queries_logits.dtype
         )
+        class_logits[:, :, 0] = -anomaly_queries_logits.squeeze(-1)  # logit for background
+        class_logits[:, :, 1] = anomaly_queries_logits.squeeze(-1)   # logit for anomaly
 
-        # Use Hungarian matching ONLY on masks (cost_class=0)
+        # Use Hungarian matching with mask + class costs
         indices = self.matcher(
             masks_queries_logits=masks_queries_logits,
             mask_labels=mask_labels,
-            class_queries_logits=dummy_class_logits,  # Ignored due to cost_class=0
+            class_queries_logits=class_logits,
             class_labels=class_labels,
         )
 
-        # Compute anomaly classification loss
+        # Compute all three losses
+        loss_masks = self.loss_masks(masks_queries_logits, mask_labels, indices)
         loss_anomaly = self.loss_anomaly_labels(
             anomaly_queries_logits, class_labels, indices
         )
 
-        return loss_anomaly
+        return {**loss_masks, **loss_anomaly}
+
+    def loss_masks(
+        self,
+        masks_queries_logits: torch.Tensor,
+        mask_labels: List[torch.Tensor],
+        indices: List[tuple],
+    ):
+        """
+        Compute mask loss (BCE) and dice loss for mask refinement.
+        Reuses Mask2Former's implementation for consistency.
+        """
+        # Use Mask2Former's loss computation
+        losses = self._mask2former_loss.loss_masks(
+            masks_queries_logits, mask_labels, indices, num_masks=1
+        )
+        
+        # Normalize by number of masks across all GPUs
+        num_masks = sum(len(tgt) for (_, tgt) in indices)
+        num_masks_tensor = torch.as_tensor(
+            num_masks, dtype=torch.float, device=masks_queries_logits.device
+        )
+
+        if dist.is_available() and dist.is_initialized():
+            dist.all_reduce(num_masks_tensor)
+            world_size = dist.get_world_size()
+        else:
+            world_size = 1
+
+        num_masks = torch.clamp(num_masks_tensor / world_size, min=1)
+
+        for key in losses.keys():
+            losses[key] = losses[key] / num_masks
+
+        return losses
 
     def loss_anomaly_labels(
         self,
@@ -107,7 +157,8 @@ class MaskClassificationAnomalyLoss(nn.Module):
         indices: List[tuple],
     ):
         """
-        Compute binary cross-entropy loss for anomaly detection.
+        Compute weighted binary cross-entropy loss for anomaly detection.
+        Uses pos_weight to handle class imbalance (anomaly class gets higher weight).
         
         Args:
             anomaly_queries_logits: [B, Q, 1] - anomaly logits per query
@@ -135,14 +186,17 @@ class MaskClassificationAnomalyLoss(nn.Module):
         # Flatten for loss computation
         anomaly_logits_flat = anomaly_queries_logits.squeeze(-1)  # [B, Q]
         
-        # Compute binary cross-entropy loss
+        # Compute weighted binary cross-entropy loss
+        # pos_weight makes anomaly class (1) more important than background (0)
+        pos_weight = torch.tensor([self.anomaly_weight], device=device)
         loss = F.binary_cross_entropy_with_logits(
             anomaly_logits_flat.view(-1),
             target_labels_per_query.view(-1),
-            reduction='mean'
+            pos_weight=pos_weight,
+            reduction='sum'  # Sum first, then normalize properly
         )
 
-        # Normalize by number of masks
+        # Normalize by number of masks across all GPUs
         num_masks = sum(len(gt_idx) for (_, gt_idx) in indices)
         num_masks_tensor = torch.as_tensor(
             num_masks, dtype=torch.float, device=device
@@ -156,8 +210,8 @@ class MaskClassificationAnomalyLoss(nn.Module):
 
         num_masks = torch.clamp(num_masks_tensor / world_size, min=1)
         
-        # Scale by batch size since BCE already averages
-        loss = loss * (batch_size * num_queries / num_masks)
+        # Normalize by number of GT masks (not all queries)
+        loss = loss / num_masks
 
         return {"anomaly_cross_entropy": loss}
 
@@ -176,7 +230,12 @@ class MaskClassificationAnomalyLoss(nn.Module):
         for loss_key, loss in losses_all_layers.items():
             log_fn(f"losses/train_{loss_key}", loss, sync_dist=True)
 
-            if "anomaly" in loss_key:
+            # Apply appropriate weighting for each loss type
+            if "mask" in loss_key:
+                weighted_loss = loss * self.mask_coefficient
+            elif "dice" in loss_key:
+                weighted_loss = loss * self.dice_coefficient
+            elif "anomaly" in loss_key:
                 weighted_loss = loss * self.anomaly_coefficient
             else:
                 raise ValueError(f"Unknown loss key: {loss_key}")

@@ -128,30 +128,87 @@ class MCS_Anomaly(MaskClassificationSemantic):
             mask_coefficient=mask_coefficient,
             dice_coefficient=dice_coefficient,
             anomaly_coefficient=anomaly_coefficient,
+            anomaly_weight=10.0,  # Higher weight for anomaly class to handle class imbalance
         )
 
-        # Freeze ALL network parameters
+        # Freeze backbone and class_head, unfreeze mask_head and anomaly_head
         print(f"{'='*80}")
-        print("Freezing network parameters...")
+        print("Configuring trainable parameters...")
         print(f"{'='*80}\n")
         
+        # First freeze everything
         for param in self.network.parameters():
             param.requires_grad = False
 
-        # Unfreeze ONLY the anomaly_head
+        # Unfreeze mask_head (for mask refinement)
+        if hasattr(self.network, 'mask_head') and self.network.mask_head is not None:
+            for param in self.network.mask_head.parameters():
+                param.requires_grad = True
+            num_mask_params = sum(p.numel() for p in self.network.mask_head.parameters())
+            print(f"✓ Mask Head: TRAINABLE ({num_mask_params:,} parameters)")
+
+        # Unfreeze anomaly_head (for anomaly classification)
         if hasattr(self.network, 'anomaly_head') and self.network.anomaly_head is not None:
             for param in self.network.anomaly_head.parameters():
                 param.requires_grad = True
-            
-            num_trainable = sum(p.numel() for p in self.network.anomaly_head.parameters())
-            num_frozen = sum(p.numel() for p in self.network.parameters() if not p.requires_grad)
-            
-            print(f"✓ TRAINING Configuration:")
-            print(f"  - Anomaly Head: TRAINABLE ({num_trainable:,} parameters)")
-            print(f"  - Rest of Network: FROZEN ({num_frozen:,} parameters)")
-            print(f"{'='*80}\n")
+            num_anomaly_params = sum(p.numel() for p in self.network.anomaly_head.parameters())
+            print(f"✓ Anomaly Head: TRAINABLE ({num_anomaly_params:,} parameters)")
         else:
             raise ValueError("Network must have an anomaly_head for anomaly detection training. Use EoMT_EXT model.")
+        
+        # Explicitly freeze class_head (we don't need multi-class classification)
+        if hasattr(self.network, 'class_head') and self.network.class_head is not None:
+            for param in self.network.class_head.parameters():
+                param.requires_grad = False
+            num_class_params = sum(p.numel() for p in self.network.class_head.parameters())
+            print(f"✓ Class Head: FROZEN ({num_class_params:,} parameters)")
+            
+        num_trainable = sum(p.numel() for p in self.network.parameters() if p.requires_grad)
+        num_frozen = sum(p.numel() for p in self.network.parameters() if not p.requires_grad)
+        
+        print(f"\n✓ TRAINING Configuration Summary:")
+        print(f"  - Total Trainable: {num_trainable:,} parameters")
+        print(f"  - Total Frozen: {num_frozen:,} parameters")
+        print(f"  - Backbone: FROZEN (transfer learning)")
+        print(f"  - Class Head: FROZEN (not used for anomaly detection)")
+        print(f"  - Mask Head: TRAINABLE (mask refinement)")
+        print(f"  - Anomaly Head: TRAINABLE (anomaly classification)")
+        print(f"{'='*80}\n")
+
+    def configure_optimizers(self):
+        """Override to only optimize anomaly_head parameters"""
+        # Collect only trainable parameters (anomaly_head)
+        trainable_params = []
+        for name, param in self.named_parameters():
+            if param.requires_grad:
+                trainable_params.append({"params": [param], "lr": self.lr, "name": name})
+        
+        if not trainable_params:
+            raise ValueError("No trainable parameters found! Make sure anomaly_head is unfrozen.")
+        
+        print(f"\n{'='*80}")
+        print(f"Optimizer configured with {len(trainable_params)} parameter groups:")
+        for p in trainable_params:
+            print(f"  - {p['name']}")
+        print(f"{'='*80}\n")
+        
+        optimizer = torch.optim.AdamW(trainable_params, weight_decay=self.weight_decay)
+        
+        # Simple cosine scheduler for fine-tuning
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+            optimizer,
+            T_max=self.trainer.estimated_stepping_batches,
+            eta_min=self.lr * 0.01
+        )
+        
+        return {
+            "optimizer": optimizer,
+            "lr_scheduler": {
+                "scheduler": scheduler,
+                "interval": "step",
+                "frequency": 1,
+            },
+        }
 
     def training_step(self, batch, batch_idx):
         imgs, targets = batch

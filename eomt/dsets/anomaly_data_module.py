@@ -39,7 +39,7 @@ class AnomalyDataModule(LightningDataModule):
         self.dataset = None
 
     def setup(self, stage: Optional[str] = None) -> None:
-        # Single dataset used for train/val/test; change here if you want splits
+        # Single dataset used for train/val/test (semantic segmentation approach)
         self.dataset = GenericAnomalyDataset(ds_cfg=self.ds_cfg, img_size=self.img_size)
 
     def train_dataloader(self) -> DataLoader:

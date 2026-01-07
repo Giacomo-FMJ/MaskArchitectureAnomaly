@@ -127,7 +127,9 @@ class GenericAnomalyDataset(Dataset):
         gt = normalize_gt(np.array(mask, dtype=np.uint8), self.gt_format)  # {0,1,255}
         gt_t = torch.from_numpy(gt.astype(np.int64))  # [H,W] long
 
-        # Two classes: 0 = ID/normal, 1 = OOD/anomaly. Pixels with 255 are ignored by not belonging to any mask
+        # SEMANTIC MODE: Two fixed classes for all images
+        # 0 = ID/normal, 1 = OOD/anomaly
+        # Pixels with 255 are ignored by not belonging to any mask
         m0 = (gt_t == 0)
         m1 = (gt_t == 1)
         masks = torch.stack([m0, m1], dim=0)  # [2,H,W] bool
