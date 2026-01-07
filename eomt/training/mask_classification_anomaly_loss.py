@@ -151,63 +151,60 @@ class MaskClassificationAnomalyLoss(Mask2FormerLoss):
         indices: List[tuple],
     ):
         """
-        Compute weighted binary cross-entropy loss for anomaly detection.
-        Uses pos_weight to handle class imbalance (anomaly class gets higher weight).
-        
+        Compute Weighted Binary Cross-Entropy.
         Args:
-            anomaly_queries_logits: [B, Q, 1] - anomaly logits per query
-            class_labels: list of [N] tensors with GT labels {0, 1}
-            indices: list of (query_idx, gt_idx) tuples from Hungarian matching
-        
-        Returns:
-            dict with 'anomaly_cross_entropy' loss
+            anomaly_queries_logits: [B, Q, 1] - anomaly score logits per query
+            class_labels: list of [N] tensors with ground truth labels (0=background, 1=anomaly, 255=void)
+            indices: list of tuples with matched (query_idx, gt_idx) per batch item
         """
-        batch_size = anomaly_queries_logits.shape[0]
-        num_queries = anomaly_queries_logits.shape[1]
+        batch_size, num_queries = anomaly_queries_logits.shape[:2]
         device = anomaly_queries_logits.device
 
-        # Prepare target labels for each query
-        target_labels_per_query = torch.zeros(
-            batch_size, num_queries, dtype=torch.float32, device=device
-        )
-
-        for b, (query_idx, gt_idx) in enumerate(indices):
-            # query_idx: indices of queries matched to GT
-            # gt_idx: indices of GT masks matched to queries
-            # Assign GT labels to matched queries
-            target_labels_per_query[b, query_idx] = class_labels[b][gt_idx].float()
-
-        # Flatten for loss computation
-        anomaly_logits_flat = anomaly_queries_logits.squeeze(-1)  # [B, Q]
+        # 1. Initialize Targets and Weights
+        # Default Target = 0 (Background)
+        target_labels = torch.zeros(batch_size, num_queries, dtype=torch.float32, device=device)
         
-        # Compute weighted binary cross-entropy loss
-        # pos_weight makes anomaly class (1) more important than background (0)
-        pos_weight = torch.tensor([self.anomaly_weight], device=device)
+        # Default Weight = 0.1 (Down-weight background to prevent dominance)
+        query_weights = torch.ones(batch_size, num_queries, device=device) * self.background_weight
+
+        # 2. Assign Targets based on Matching
+        for b, (query_idx, gt_idx) in enumerate(indices):
+            # Strict Filter: Ignore VOID (255) labels
+            valid_mask = class_labels[b][gt_idx] != 255
+            
+            valid_query_idx = query_idx[valid_mask]
+            
+            # Set Target = 1.0 (Anomaly) for valid matched queries
+            target_labels[b, valid_query_idx] = 1.0
+            
+            # Set Weight = 2.0 (High importance) for valid matched queries
+            query_weights[b, valid_query_idx] = self.anomaly_weight
+
+        # Flatten for BCE
+        logits_flat = anomaly_queries_logits.view(-1)
+        targets_flat = target_labels.view(-1)
+        weights_flat = query_weights.view(-1)
+
+        # 3. Compute Weighted BCE
         loss = F.binary_cross_entropy_with_logits(
-            anomaly_logits_flat.view(-1),
-            target_labels_per_query.view(-1),
-            pos_weight=pos_weight,
-            reduction='sum'  # Sum first, then normalize properly
+            logits_flat,
+            targets_flat,
+            weight=weights_flat, # Applies the per-element weighting
+            reduction='sum'
         )
 
-        # Normalize by number of masks across all GPUs
+        # 4. Normalize
+        # Normalize by the actual number of anomaly masks to keep loss magnitude stable
         num_masks = sum(len(gt_idx) for (_, gt_idx) in indices)
-        num_masks_tensor = torch.as_tensor(
-            num_masks, dtype=torch.float, device=device
-        )
+        num_masks_tensor = torch.as_tensor(num_masks, dtype=torch.float, device=device)
 
         if dist.is_available() and dist.is_initialized():
             dist.all_reduce(num_masks_tensor)
-            world_size = dist.get_world_size()
+            num_masks = torch.clamp(num_masks_tensor / dist.get_world_size(), min=1)
         else:
-            world_size = 1
+            num_masks = max(num_masks_tensor.item(), 1)
 
-        num_masks = torch.clamp(num_masks_tensor / world_size, min=1)
-        
-        # Normalize by number of GT masks (not all queries)
-        loss = loss / num_masks
-
-        return {"anomaly_cross_entropy": loss}
+        return {"anomaly_cross_entropy": loss / num_masks}
 
     def loss_total(self, losses_all_layers, log_fn) -> torch.Tensor:
         """
