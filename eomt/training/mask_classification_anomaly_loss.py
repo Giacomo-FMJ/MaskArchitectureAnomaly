@@ -171,16 +171,25 @@ class MaskClassificationAnomalyLoss(Mask2FormerLoss):
 
         # 2. Assign Targets based on Matching
         for b, (query_idx, gt_idx) in enumerate(indices):
-            # Strict Filter: Ignore VOID (255) labels
-            valid_mask = class_labels[b][gt_idx] != 255
+            query_idx = query_idx.to(device)
+            gt_idx = gt_idx.to(device)
             
+            # Get the actual labels for matched GT masks
+            matched_labels = class_labels[b][gt_idx]
+            
+            # Filter out VOID (255) labels
+            valid_mask = matched_labels != 255
             valid_query_idx = query_idx[valid_mask]
+            valid_labels = matched_labels[valid_mask]
             
-            # Set Target = 1.0 (Anomaly) for valid matched queries
-            target_labels[b, valid_query_idx] = 1.0
+            # Set targets based on actual labels (0 for background, 1 for anomaly)
+            target_labels[b, valid_query_idx] = valid_labels.float()
             
-            # Set Weight = 2.0 (High importance) for valid matched queries
-            query_weights[b, valid_query_idx] = self.anomaly_weight
+            # Set higher weight only for anomaly queries
+            anomaly_mask = valid_labels == 1
+            if anomaly_mask.any():
+                anomaly_query_idx = valid_query_idx[anomaly_mask]
+                query_weights[b, anomaly_query_idx] = self.anomaly_weight
 
         # Flatten for BCE
         logits_flat = anomaly_queries_logits.view(-1)
