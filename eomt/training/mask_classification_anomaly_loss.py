@@ -17,10 +17,9 @@ from transformers.models.mask2former.modeling_mask2former import (
     Mask2FormerHungarianMatcher,
     Mask2FormerLoss,
 )
-from scipy.optimize import linear_sum_assignment
 
 
-class MaskClassificationAnomalyLoss(nn.Module):
+class MaskClassificationAnomalyLoss(Mask2FormerLoss):
     """
     Loss for anomaly detection using mask queries.
     Handles 3 classes: void (255, ignored), background (0), anomaly (1).
@@ -42,7 +41,8 @@ class MaskClassificationAnomalyLoss(nn.Module):
         anomaly_coefficient: float,
         anomaly_weight: float = 10.0,  # Weight for anomaly class (higher = more importance)
     ):
-        super().__init__()
+        # Initialize as nn.Module (not calling super().__init__() to avoid Mask2FormerLoss init)
+        nn.Module.__init__(self)
         self.num_points = num_points
         self.oversample_ratio = oversample_ratio
         self.importance_sample_ratio = importance_sample_ratio
@@ -57,12 +57,6 @@ class MaskClassificationAnomalyLoss(nn.Module):
             cost_mask=mask_coefficient,
             cost_dice=dice_coefficient,
             cost_class=anomaly_coefficient,  # Use class cost for anomaly matching
-        )
-        
-        # Helper for mask/dice loss computation (reuse from Mask2Former)
-        self._mask2former_loss = Mask2FormerLoss(
-            num_labels=1,  # Binary: anomaly or not
-            eos_coef=0.1,
         )
 
     @torch.compiler.disable
@@ -126,8 +120,8 @@ class MaskClassificationAnomalyLoss(nn.Module):
         Compute mask loss (BCE) and dice loss for mask refinement.
         Reuses Mask2Former's implementation for consistency.
         """
-        # Use Mask2Former's loss computation
-        losses = self._mask2former_loss.loss_masks(
+        # Use parent class (Mask2FormerLoss) implementation
+        losses = super().loss_masks(
             masks_queries_logits, mask_labels, indices, num_masks=1
         )
         
