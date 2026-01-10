@@ -121,7 +121,7 @@ class GenericAnomalyDataset(LightningDataModule):
             batch_size: int = 1,
             num_workers: int = 4,
             path: str = "",
-            num_classes: int = 2,
+            num_classes: int = 19,
             check_empty_targets: bool = False
     ):
         super().__init__(

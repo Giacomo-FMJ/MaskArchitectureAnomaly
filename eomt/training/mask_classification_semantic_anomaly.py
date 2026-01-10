@@ -20,7 +20,7 @@ class MCS_Anomaly(MaskClassificationSemantic):
             num_points: int = 12544,
             num_classes: int = 19,
             ignore_idx: int = 255,
-            lr: float = 1e-4,
+            lr: float = 1e-5,
             llrd: float = 0.8,
             llrd_l2_enabled: bool = True,
             lr_mult: float = 1.0,
@@ -49,6 +49,26 @@ class MCS_Anomaly(MaskClassificationSemantic):
             attn_mask_annealing_enabled=attn_mask_annealing_enabled,
             attn_mask_annealing_start_steps=attn_mask_annealing_start_steps,
             attn_mask_annealing_end_steps=attn_mask_annealing_end_steps,
+            ignore_idx=ignore_idx,
+            lr=lr,
+            llrd=llrd,
+            llrd_l2_enabled=llrd_l2_enabled,
+            lr_mult=lr_mult,
+            weight_decay=weight_decay,
+            num_points=num_points,
+            oversample_ratio=oversample_ratio,
+            importance_sample_ratio=importance_sample_ratio,
+            poly_power=poly_power,
+            warmup_steps=warmup_steps,
+            mask_coefficient=mask_coefficient,
+            dice_coefficient=dice_coefficient,
+            class_coefficient=class_coefficient,
+            mask_thresh=mask_thresh,
+            overlap_thresh=overlap_thresh,
+            ckpt_path=ckpt_path,
+            delta_weights=delta_weights,
+            load_ckpt_class_head=load_ckpt_class_head,
+            no_object_coefficient=no_object_coefficient,
             **kwargs
         )
 
@@ -85,7 +105,7 @@ class MCS_Anomaly(MaskClassificationSemantic):
     def _preprocess_images(self, imgs):
         if imgs.dtype == torch.uint8:
             imgs = imgs.float() / 255.0
-        imgs = (imgs - self.pixel_mean) / self.pixel_std
+        #imgs = (imgs - self.pixel_mean) / self.pixel_std
         return imgs
 
     def forward(self, x):

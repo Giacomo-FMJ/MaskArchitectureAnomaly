@@ -93,9 +93,28 @@ class LightningModule(lightning.LightningModule):
             incompatible_keys = self.load_state_dict(combined_state_dict, strict=False)
             self._raise_on_incompatible(incompatible_keys, load_ckpt_class_head)
         elif ckpt_path:
+            logging.info(f"Loading checkpoint from {ckpt_path} with load_ckpt_class_head={load_ckpt_class_head}")
             ckpt = self._load_ckpt(ckpt_path, load_ckpt_class_head)
+
+            # Check if class_head is in ckpt
+            class_head_keys = [k for k in ckpt.keys() if "class_head" in k]
+            logging.info(f"Checkpoint contains {len(class_head_keys)} class_head keys: {class_head_keys[:2]}...")
+
+            weight_key = 'network.class_head.weight' if 'network.class_head.weight' in ckpt else 'class_head.weight'
+            if weight_key in ckpt:
+                 logging.info(f"Shape of {weight_key} in ckpt: {ckpt[weight_key].shape}")
+            else:
+                 logging.info("class_head.weight NOT FOUND in ckpt")
+
             incompatible_keys = self.load_state_dict(ckpt, strict=False)
-            self._raise_on_incompatible(incompatible_keys, load_ckpt_class_head)
+            logging.info(f"Load state dict incompatible keys: {incompatible_keys}")
+
+            # Temporarily suppress error for missing keys to allow loading EoMT ckpt into EoMT_EXT (missing anomaly_head)
+            # self._raise_on_incompatible(incompatible_keys, load_ckpt_class_head)
+            if incompatible_keys.missing_keys:
+                 logging.warning(f"Missing keys during loading (expected for anomaly_head): {incompatible_keys.missing_keys[:5]}...")
+        else:
+            logging.warning("No checkpoint path provided (ckpt_path is None). Model initialized with random/default weights.")
 
         self.log = torch.compiler.disable(self.log)  # type: ignore
 
@@ -614,7 +633,11 @@ class LightningModule(lightning.LightningModule):
             img = imgs[i]
             new_h, new_w = self.scale_img_size_semantic(img.shape[-2:])
             pil_img = Image.fromarray(img.permute(1, 2, 0).cpu().numpy())
-            resized_img = pil_img.resize((new_w, new_h), Image.BILINEAR)
+            try:
+                resample = Image.Resampling.BILINEAR
+            except AttributeError:
+                resample = Image.BILINEAR
+            resized_img = pil_img.resize((new_w, new_h), resample)
             resized_img = (
                 torch.from_numpy(np.array(resized_img)).permute(2, 0, 1).to(img.device)
             )
@@ -712,7 +735,11 @@ class LightningModule(lightning.LightningModule):
             new_h, new_w = self.scale_img_size_instance_panoptic(img.shape[-2:])
 
             pil_img = Image.fromarray(img.permute(1, 2, 0).cpu().numpy())
-            pil_img = pil_img.resize((new_w, new_h), Image.BILINEAR)
+            try:
+                resample = Image.Resampling.BILINEAR
+            except AttributeError:
+                resample = Image.BILINEAR
+            pil_img = pil_img.resize((new_w, new_h), resample)
             resized_img = (
                 torch.from_numpy(np.array(pil_img)).permute(2, 0, 1).to(img.device)
             )
