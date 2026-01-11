@@ -99,8 +99,34 @@ class MCS_Anomaly(MaskClassificationSemantic):
 
         if hasattr(self.network, 'anomaly_mask_head'):
             print("Unfreezing anomaly_mask_head params...")
-            for param in self.network.mask_head.parameters():
+            for param in self.network.anomaly_mask_head.parameters():
                 param.requires_grad = True
+
+        # --- NEW: Unfreeze Transformer Decoder (Interaction Blocks) and Queries ---
+        # With 100 samples, we cannot retrain the whole backbone, but we MUST retrain
+        # the queries ('q') and the layers where queries interact with image features
+        # (the last 'num_blocks'). Otherwise, the queries are stuck looking for "Cars"
+        # and "Roads" (Semantic Objects) instead of "Anomalies".
+
+        # 1. Unfreeze Queries
+        if hasattr(self.network, 'q'):
+            print("Unfreezing generic queries (q)...")
+            self.network.q.weight.requires_grad = True
+
+        # 2. Unfreeze Decoder Blocks
+        # EoMT uses the last 'num_blocks' of the backbone as the decoder.
+        # num_blocks = getattr(self.network, 'num_blocks', 4)
+        # if hasattr(self.network, 'encoder') and hasattr(self.network.encoder, 'backbone'):
+        #      if hasattr(self.network.encoder.backbone, 'blocks'):
+        #          blocks = self.network.encoder.backbone.blocks
+        #          # Unfreeze last N blocks
+        #          idx_start = len(blocks) - num_blocks
+        #          for i in range(idx_start, len(blocks)):
+        #              print(f"Unfreezing Backbone Block {i} (Decoder Layer)...")
+        #              for param in blocks[i].parameters():
+        #                  param.requires_grad = True
+
+        # --------------------------------------------------------------------------
 
     def _preprocess_images(self, imgs):
         if imgs.dtype == torch.uint8:
