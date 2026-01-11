@@ -100,10 +100,24 @@ class AnomalyInternalDataset(Dataset):
 
         gt_t = torch.from_numpy(gt.astype(np.int64))
 
-        m0 = (gt_t == 0)
-        m1 = (gt_t == 1)
-        masks = torch.stack([m0, m1], dim=0)
-        labels = torch.tensor([0, 1], dtype=torch.int64)
+        present_classes = torch.unique(gt_t)
+        masks_list = []
+        labels_list = []
+
+        # Check for class 0 (Backround) and 1 (Anomaly) presence
+        for class_id in [0, 1]:
+            if class_id in present_classes:
+                masks_list.append(gt_t == class_id)
+                labels_list.append(class_id)
+
+        if masks_list:
+            masks = torch.stack(masks_list, dim=0)
+            labels = torch.tensor(labels_list, dtype=torch.int64)
+        else:
+            # Handle case where neither 0 nor 1 is present (e.g. all 255)
+            masks = torch.zeros((0, *gt_t.shape), dtype=torch.bool)
+            labels = torch.tensor([], dtype=torch.int64)
+
         target = {"masks": masks, "labels": labels}
 
         return img_t, target
@@ -118,7 +132,7 @@ class GenericAnomalyDataset(LightningDataModule):
             self,
             datasets: list,
             img_size: tuple[int, int] = (1024, 1024),
-            batch_size: int = 1,
+            batch_size: int = 4,
             num_workers: int = 4,
             path: str = "",
             num_classes: int = 19,

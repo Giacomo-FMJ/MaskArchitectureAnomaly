@@ -30,8 +30,8 @@ class MCS_Anomaly(MaskClassificationSemantic):
             poly_power: float = 0.9,
             warmup_steps: List[int] = [500, 1000],
             mask_coefficient: float = 2.0,
-            dice_coefficient: float = 2.0,
-            class_coefficient: float = 2.0,
+            dice_coefficient: float = 4.0,
+            class_coefficient: float = 4.0,
             mask_thresh: float = 0.8,
             overlap_thresh: float = 0.8,
             ckpt_path: Optional[str] = None,
@@ -40,7 +40,8 @@ class MCS_Anomaly(MaskClassificationSemantic):
             **kwargs
     ):
 
-        no_object_coefficient = 1.0
+        no_object_coefficient = 0.1
+        bg_coefficient = 2.0
 
         super().__init__(
             network=network,
@@ -81,6 +82,7 @@ class MCS_Anomaly(MaskClassificationSemantic):
             class_coefficient=class_coefficient,
             num_labels=2,
             no_object_coefficient=no_object_coefficient,
+            bg_coefficient=bg_coefficient,
         )
 
         num_layers = self.network.num_blocks + 1 if getattr(self.network, 'masked_attn_enabled', False) else 1

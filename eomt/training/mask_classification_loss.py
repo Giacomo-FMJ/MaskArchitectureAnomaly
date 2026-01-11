@@ -30,6 +30,7 @@ class MaskClassificationLoss(Mask2FormerLoss):
         class_coefficient: float,
         num_labels: int,
         no_object_coefficient: float,
+        bg_coefficient: float = 1.0,
     ):
         nn.Module.__init__(self)
         self.num_points = num_points
@@ -42,6 +43,8 @@ class MaskClassificationLoss(Mask2FormerLoss):
         self.eos_coef = no_object_coefficient
         empty_weight = torch.ones(self.num_labels + 1)
         empty_weight[-1] = self.eos_coef
+        if self.num_labels == 2:
+            empty_weight[0] = bg_coefficient
         self.register_buffer("empty_weight", empty_weight)
 
         self.matcher = Mask2FormerHungarianMatcher(
