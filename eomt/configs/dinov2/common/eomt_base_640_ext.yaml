@@ -28,11 +28,11 @@ data:
   init_args:
     img_size: [ 1024, 1024 ]
     datasets:
-      - name: RoadAnomaly
-        root: eomt_trained_model/Validation_Dataset/RoadAnomaly
+      - name: FS_LostFound_full
+        root: eomt_trained_model/Validation_Dataset/FS_LostFound_full
         images_dir: images
         masks_dir: labels_masks
-        image_glob: "*.jpg"
+        image_glob: "*.png"
         mask_ext: "png"
         gt_format: binary_any_nonzero_is_ood_void255
         skip_no_ood: false

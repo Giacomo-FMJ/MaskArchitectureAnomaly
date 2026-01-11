@@ -46,6 +46,21 @@ class EoMT_EXT(nn.Module):
             nn.Linear(self.encoder.backbone.embed_dim, self.encoder.backbone.embed_dim),
         )
 
+        self.anomaly_mask_head = nn.Sequential(
+            nn.Linear(self.encoder.backbone.embed_dim, self.encoder.backbone.embed_dim),
+            nn.GELU(),
+            nn.Linear(self.encoder.backbone.embed_dim, self.encoder.backbone.embed_dim),
+            nn.GELU(),
+            nn.Linear(self.encoder.backbone.embed_dim, self.encoder.backbone.embed_dim),
+        )
+
+        # Zero-initialize the last layer of anomaly_mask_head
+        # This acts as a Residual connection: at the start, the output is 0,
+        # so the model behaves EXACTLY like the pre-trained mask_head (preserving normal logic).
+        # During training, it learns to add corrections only where needed (e.g. for anomalies).
+        nn.init.zeros_(self.anomaly_mask_head[-1].weight)
+        nn.init.zeros_(self.anomaly_mask_head[-1].bias)
+
         patch_size = encoder.backbone.patch_embed.patch_size
         max_patch_size = max(patch_size[0], patch_size[1])
         num_upscale = max(1, int(math.log2(max_patch_size)) - 2)
@@ -67,7 +82,7 @@ class EoMT_EXT(nn.Module):
         )
 
         mask_logits = torch.einsum(
-            "bqc, bchw -> bqhw", self.mask_head(q), self.upscale(x)
+            "bqc, bchw -> bqhw", self.mask_head(q) + self.anomaly_mask_head(q), self.upscale(x)
         )
 
         return mask_logits, class_logits, anomaly_score

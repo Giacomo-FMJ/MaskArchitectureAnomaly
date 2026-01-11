@@ -1,7 +1,7 @@
 import torch
 from torch import nn
 import torch.nn.functional as F
-from torchvision.utils import save_image, make_grid
+from torchvision.utils import save_image
 from typing import Optional, List
 
 from .mask_classification_loss import MaskClassificationLoss
@@ -14,18 +14,33 @@ class MCS_Anomaly(MaskClassificationSemantic):
             self,
             network: nn.Module,
             img_size: tuple[int, int],
-            num_classes: int,
             attn_mask_annealing_enabled: bool,
             attn_mask_annealing_start_steps: Optional[List[int]] = None,
             attn_mask_annealing_end_steps: Optional[List[int]] = None,
+            num_points: int = 12544,
+            num_classes: int = 19,
+            ignore_idx: int = 255,
+            lr: float = 1e-5,
+            llrd: float = 0.8,
+            llrd_l2_enabled: bool = True,
+            lr_mult: float = 1.0,
+            weight_decay: float = 0.05,
+            oversample_ratio: float = 3.0,
+            importance_sample_ratio: float = 0.75,
+            poly_power: float = 0.9,
+            warmup_steps: List[int] = [500, 1000],
+            mask_coefficient: float = 2.0,
+            dice_coefficient: float = 2.0,
+            class_coefficient: float = 2.0,
+            mask_thresh: float = 0.8,
+            overlap_thresh: float = 0.8,
+            ckpt_path: Optional[str] = None,
+            delta_weights: bool = False,
+            load_ckpt_class_head: bool = True,
             **kwargs
     ):
-        no_object_weight_val = kwargs.pop('no_object_weight', 0.1)
 
-        kwargs.setdefault('mask_coefficient', 2.0)
-        kwargs.setdefault('dice_coefficient', 2.0)
-        kwargs.setdefault('class_coefficient', 2.0)
-        kwargs['no_object_coefficient'] = no_object_weight_val
+        no_object_coefficient = 1.0
 
         super().__init__(
             network=network,
@@ -34,18 +49,38 @@ class MCS_Anomaly(MaskClassificationSemantic):
             attn_mask_annealing_enabled=attn_mask_annealing_enabled,
             attn_mask_annealing_start_steps=attn_mask_annealing_start_steps,
             attn_mask_annealing_end_steps=attn_mask_annealing_end_steps,
+            ignore_idx=ignore_idx,
+            lr=lr,
+            llrd=llrd,
+            llrd_l2_enabled=llrd_l2_enabled,
+            lr_mult=lr_mult,
+            weight_decay=weight_decay,
+            num_points=num_points,
+            oversample_ratio=oversample_ratio,
+            importance_sample_ratio=importance_sample_ratio,
+            poly_power=poly_power,
+            warmup_steps=warmup_steps,
+            mask_coefficient=mask_coefficient,
+            dice_coefficient=dice_coefficient,
+            class_coefficient=class_coefficient,
+            mask_thresh=mask_thresh,
+            overlap_thresh=overlap_thresh,
+            ckpt_path=ckpt_path,
+            delta_weights=delta_weights,
+            load_ckpt_class_head=load_ckpt_class_head,
+            no_object_coefficient=no_object_coefficient,
             **kwargs
         )
 
         self.criterion_anomalymask = MaskClassificationLoss(
-            num_points=self.num_points,
-            oversample_ratio=self.oversample_ratio,
-            importance_sample_ratio=self.importance_sample_ratio,
-            mask_coefficient=self.mask_coefficient,
-            dice_coefficient=self.dice_coefficient,
-            class_coefficient=self.class_coefficient,
+            num_points=num_points,
+            oversample_ratio=oversample_ratio,
+            importance_sample_ratio=importance_sample_ratio,
+            mask_coefficient=mask_coefficient,
+            dice_coefficient=dice_coefficient,
+            class_coefficient=class_coefficient,
             num_labels=2,
-            no_object_coefficient=self.no_object_coefficient,
+            no_object_coefficient=no_object_coefficient,
         )
 
         num_layers = self.network.num_blocks + 1 if getattr(self.network, 'masked_attn_enabled', False) else 1
@@ -57,7 +92,7 @@ class MCS_Anomaly(MaskClassificationSemantic):
     def _preprocess_images(self, imgs):
         if imgs.dtype == torch.uint8:
             imgs = imgs.float() / 255.0
-        imgs = (imgs - self.pixel_mean) / self.pixel_std
+        #imgs = (imgs - self.pixel_mean) / self.pixel_std
         return imgs
 
     def forward(self, x):
@@ -73,6 +108,11 @@ class MCS_Anomaly(MaskClassificationSemantic):
     def training_step(self, batch, batch_idx):
         imgs, targets = batch
         targets = self._unstack_targets(imgs, targets)
+
+        # Removed the manual filtering of Background Class (0) here.
+        # instead we handle it in the loss function via Selective Mask Loss.
+        # This allows the model to learn to CLASSIFY background correctly (fixing weighting issues)
+        # while taking NO gradients for MASK deformation on background objects.
 
         mask_logits_per_block, class_logits_per_block, anomaly_logits_per_block = self(imgs)
 
@@ -112,7 +152,7 @@ class MCS_Anomaly(MaskClassificationSemantic):
             #     probs_anomaly[..., 0] + probs_anomaly[..., 2],  # Canale 0: Normal (Bg + Void)
             #     probs_anomaly[..., 1]  # Canale 1: Anomaly
             # ], dim=-1)
-            print(anomaly_logits.shape)
+            #print(anomaly_logits.shape)
 
             mask_logits = F.interpolate(mask_logits, self.img_size, mode="bilinear")
 
@@ -132,6 +172,38 @@ class MCS_Anomaly(MaskClassificationSemantic):
                 self.plot_semantic(
                     imgs[0], targets[0], logits[0], log_prefix, i, batch_idx
                 )
+
+    def to_per_pixel_logits_semantic(self, mask_logits, anomaly_logits):
+        # anomaly_logits: [B, Q, 3] (BG, Anomaly, Void)
+        # We need to construct class probabilities for [NotAnomaly, Anomaly]
+        # Ignoring the Void class for binary mask construction typically?
+        # Or better: sum BG and Void as "Background/NotAnomaly" and keep Anomaly as "Anomaly".
+
+        probs = anomaly_logits.softmax(dim=-1) # [B, Q, 3]
+
+        # Class 0: Not Anomaly (BG + Void ?? Or just BG?).
+        # Class 1: Anomaly.
+        # If we respect the logic that Void is ignored in loss, maybe it should be 0 here too?
+        # Standard semantic seg: max(probs) -> class.
+        # Here we want a heatmap for Anomaly.
+        # Let's construct a [B, Q, 2] tensor.
+        # Channel 0: BG sum. Channel 1: Anomaly.
+
+        # Based on user context: "valid_probs = torch.stack([probs[..., 0] + probs[..., 2], probs[..., 1]], dim=-1)"
+        bs, nq, _ = probs.shape
+        valid_probs = torch.zeros((bs, nq, 2), device=probs.device, dtype=probs.dtype)
+        valid_probs[:, :, 0] = probs[:, :, 0] + probs[:, :, 2] # BG + Void
+        valid_probs[:, :, 1] = probs[:, :, 1] # Anomaly
+
+        # Now einsum
+        # mask_logits: [B, Q, H, W] (sigmoid-ed? No, inherit logic expects raw logits usually?
+        # WAIT. Base class `to_per_pixel_logits_semantic` does `mask_logits.sigmoid()`.
+        # So mask_logits here are raw.
+        return torch.einsum(
+            "bqhw, bqc -> bchw",
+            mask_logits.sigmoid(),
+            valid_probs
+        )
 
     def plot_semantic(self, img, target, logits, prefix, layer_idx, batch_idx):
         import wandb

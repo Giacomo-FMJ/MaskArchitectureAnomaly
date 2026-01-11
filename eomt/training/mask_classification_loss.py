@@ -70,7 +70,24 @@ class MaskClassificationLoss(Mask2FormerLoss):
             class_labels=class_labels,
         )
 
-        loss_masks = self.loss_masks(masks_queries_logits, mask_labels, indices)
+        # --- SELECTIVE MASK LOSS ---
+        # We filter the indices used for MASK LOSS to exclude the Background Class (0).
+        # This means the model will NOT receive gradients to deform the mask for Class 0,
+        # preserving the pre-trained semantic shapes (e.g. car, road) hidden in the network.
+        # However, we pass the original 'indices' to loss_labels, so the model IS supervised
+        # to classify Background queries as Class 0 (fixing the weighting imbalance).
+        filtered_indices = []
+        for batch_idx, (src_idxs, tgt_idxs) in enumerate(indices):
+            # Keep match only if target class is NOT 0 (Background)
+            # Assuming Class 0 is Background.
+            # Handle device mismatch: indices might be on CPU, class_labels on GPU.
+            # We must ensure valid_mask is on the same device as the indices being filtered.
+            valid_mask = class_labels[batch_idx][tgt_idxs] != 0
+            valid_mask = valid_mask.to(src_idxs.device)
+            filtered_indices.append((src_idxs[valid_mask], tgt_idxs[valid_mask]))
+        # ---------------------------
+
+        loss_masks = self.loss_masks(masks_queries_logits, mask_labels, filtered_indices)
         loss_classes = self.loss_labels(class_queries_logits, class_labels, indices)
 
         return {**loss_masks, **loss_classes}
