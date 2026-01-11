@@ -29,8 +29,9 @@ class MCS_Anomaly(MaskClassificationSemantic):
             importance_sample_ratio: float = 0.75,
             poly_power: float = 0.9,
             warmup_steps: List[int] = [500, 1000],
-            mask_coefficient: float = 2.0,
-            dice_coefficient: float = 2.0,
+            no_object_coefficient: float = 0.1,
+            mask_coefficient: float = 5.0,
+            dice_coefficient: float = 5.0,
             class_coefficient: float = 2.0,
             mask_thresh: float = 0.8,
             overlap_thresh: float = 0.8,
@@ -40,7 +41,8 @@ class MCS_Anomaly(MaskClassificationSemantic):
             **kwargs
     ):
 
-        no_object_coefficient = 1.0
+        no_object_weight = kwargs.pop('no_object_weight', 0.1)
+        anomaly_weight = kwargs.pop('anomaly_weight', 10.0) # Highly boosted weight
 
         super().__init__(
             network=network,
@@ -49,28 +51,25 @@ class MCS_Anomaly(MaskClassificationSemantic):
             attn_mask_annealing_enabled=attn_mask_annealing_enabled,
             attn_mask_annealing_start_steps=attn_mask_annealing_start_steps,
             attn_mask_annealing_end_steps=attn_mask_annealing_end_steps,
-            ignore_idx=ignore_idx,
             lr=lr,
             llrd=llrd,
             llrd_l2_enabled=llrd_l2_enabled,
             lr_mult=lr_mult,
             weight_decay=weight_decay,
-            num_points=num_points,
-            oversample_ratio=oversample_ratio,
-            importance_sample_ratio=importance_sample_ratio,
             poly_power=poly_power,
             warmup_steps=warmup_steps,
-            mask_coefficient=mask_coefficient,
-            dice_coefficient=dice_coefficient,
-            class_coefficient=class_coefficient,
-            mask_thresh=mask_thresh,
-            overlap_thresh=overlap_thresh,
             ckpt_path=ckpt_path,
             delta_weights=delta_weights,
             load_ckpt_class_head=load_ckpt_class_head,
-            no_object_coefficient=no_object_coefficient,
-            **kwargs
         )
+
+        self.save_hyperparameters(ignore=["_class_path"])
+
+        self.ignore_idx = ignore_idx
+        self.mask_thresh = mask_thresh
+        self.overlap_thresh = overlap_thresh
+        self.stuff_classes = range(num_classes)
+        self.no_object_coefficient = no_object_weight
 
         self.criterion_anomalymask = MaskClassificationLoss(
             num_points=num_points,
@@ -80,7 +79,8 @@ class MCS_Anomaly(MaskClassificationSemantic):
             dice_coefficient=dice_coefficient,
             class_coefficient=class_coefficient,
             num_labels=2,
-            no_object_coefficient=no_object_coefficient,
+            no_object_coefficient=self.no_object_coefficient,
+            anomaly_weight=anomaly_weight,
         )
 
         num_layers = self.network.num_blocks + 1 if getattr(self.network, 'masked_attn_enabled', False) else 1

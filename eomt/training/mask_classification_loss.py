@@ -30,6 +30,7 @@ class MaskClassificationLoss(Mask2FormerLoss):
         class_coefficient: float,
         num_labels: int,
         no_object_coefficient: float,
+        anomaly_weight: float = 1.0,  # New param
     ):
         nn.Module.__init__(self)
         self.num_points = num_points
@@ -40,7 +41,13 @@ class MaskClassificationLoss(Mask2FormerLoss):
         self.class_coefficient = class_coefficient
         self.num_labels = num_labels
         self.eos_coef = no_object_coefficient
+
+        # Construct weights: [Background(1.0), Anomaly(anomaly_weight), ..., EOS(eos_coef)]
         empty_weight = torch.ones(self.num_labels + 1)
+        # Assuming index 1 is Anomaly (based on targets having labels 0 and 1)
+        if self.num_labels >= 2:
+            empty_weight[1] = anomaly_weight
+
         empty_weight[-1] = self.eos_coef
         self.register_buffer("empty_weight", empty_weight)
 
