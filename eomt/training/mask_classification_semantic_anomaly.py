@@ -89,6 +89,19 @@ class MCS_Anomaly(MaskClassificationSemantic):
         self.register_buffer("pixel_mean", torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1))
         self.register_buffer("pixel_std", torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1))
 
+        for param in self.network.parameters():
+            param.requires_grad = False
+
+        if hasattr(self.network, 'anomaly_head'):
+            print("Unfreezing anomaly_head params...")
+            for param in self.network.anomaly_head.parameters():
+                param.requires_grad = True
+
+        if hasattr(self.network, 'anomaly_mask_head'):
+            print("Unfreezing anomaly_mask_head params...")
+            for param in self.network.mask_head.parameters():
+                param.requires_grad = True
+
     def _preprocess_images(self, imgs):
         if imgs.dtype == torch.uint8:
             imgs = imgs.float() / 255.0
