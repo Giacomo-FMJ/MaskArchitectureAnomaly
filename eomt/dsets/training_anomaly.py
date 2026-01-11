@@ -118,7 +118,7 @@ class GenericAnomalyDataset(LightningDataModule):
             self,
             datasets: list,
             img_size: tuple[int, int] = (1024, 1024),
-            batch_size: int = 1,
+            batch_size: int = 4,
             num_workers: int = 4,
             path: str = "",
             num_classes: int = 19,
